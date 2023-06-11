@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import joblib
+import streamlit.components.v1 as components
 from tensorflow.keras.models import load_model
 
 model = load_model('model.h5')
@@ -46,86 +47,113 @@ def preprocessing(df):
 	  mod_s.append(temp)
 	# len(mod_s)
 	df['Mod Sequence'] = mod_s
-	df = df[['EntryID',	'Sequence', 'Mod Sequence',	'Residue No.','Modification']]
-	df1 = df.drop(['EntryID', 'Sequence', 'Modification'], axis=1)
+	df = df[['EntryID',	'Sequence', 'Mod Sequence',	'Residue No.']]
+	df1 = df.drop(['EntryID', 'Sequence'], axis=1)
 
 	seqs = list(df1['Mod Sequence'].values)
 	X = tokenization(seqs, mx_len)
 
 	return df1,X
 
+def SingleSequencePred(seq, res):
+	data = [[1, seq, res]]
+	df = pd.DataFrame(data, columns=['EntryID', 'Sequence', 'Residue No.'])
+	st.write(df)
+	st.write("After preprocessing...")
+	df1 = preprocessing(df)[0]
+
+	# Display the DataFrame in the Streamlit app
+	st.write(df1)
+
+	X = preprocessing(df)[1]
+
+	y_pred = model.predict(X)
+
+	pred = pd.DataFrame(y_pred)
+	pred.columns = ['Acetylation', 'Ribosylation', 'glycoprotein', 'hydroxylation', 'methylation', 'oxidation', 'pHOSPORYLATON', 'protein-splicing']
+	pred['Prediction'] = pred.idxmax(axis=1)
+
+	st.write('**Predictions:**')
+	final = df1
+	final['Prediction'] = pred['Prediction']
+	st.write(final)
+
+def MultiSequencePred(data):
+	st.write("After preprocessing...")
+	df1 = preprocessing(data)[0]
+
+	# Display the DataFrame in the Streamlit app
+	st.write(df1)
+
+	X = preprocessing(data)[1]
+
+	y_pred = model.predict(X)
+
+	pred = pd.DataFrame(y_pred)
+	pred.columns = ['Acetylation', 'Ribosylation', 'glycoprotein', 'hydroxylation', 'methylation', 'oxidation', 'pHOSPORYLATON', 'protein-splicing']
+	pred['Prediction'] = pred.idxmax(axis=1)
+
+	st.write('**Predictions:**')
+	final = df1
+	final['Prediction'] = pred['Prediction']
+	final["EntryID"] = data["EntryID"]
+	final = final[["EntryID", "Mod Sequence", "Prediction"]]
+
+	st.write(final)
+
 def main():
 	st.title("Histify")
 	st.write("### Histidine Multi-class Predictions Model")
 
-	option = st.radio('Choose Input Type', ['Single Sequence Prediction', 'Multiple Sequence Prediction'])
+	tab1, tab2 = st.tabs(['Single Sequence Prediction', 'Multiple Sequence Prediction'])
 
-	if option=="Single Sequence Prediction":
-		seq = st.text_input('Enter protien Sequence')
+	# option = st.radio('Choose Input Type', ['Single Sequence Prediction', 'Multiple Sequence Prediction'])
+
+	with tab1:
+		with st.expander("See Example", expanded=True):
+			st.write("*Example Sequence: MV**H**LTPEEKSAVTAL*")
+			st.write("*Example Residue No.: 3*")		    
+		seq = st.text_input('Enter protein Sequence')
 		res = st.number_input('Enter Residue number for Hustidine', step=1, value=0, format="%d")
 		if st.button("Process"):
-			data = [[1, seq, res, 'NA']]
-			df = pd.DataFrame(data, columns=['EntryID', 'Sequence', 'Residue No.', 'Modification'])
-			st.write(df)
-			st.write("After preprocessing...")
-			df1 = preprocessing(df)[0]
-
-			# Display the DataFrame in the Streamlit app
-			st.write(df1)
-
-			X = preprocessing(df)[1]
-
-			y_pred = model.predict(X)
-
-			pred = pd.DataFrame(y_pred)
-			pred.columns = ['Acetylation', 'Ribosylation', 'glycoprotein', 'hydroxylation', 'methylation', 'oxidation', 'pHOSPORYLATON', 'protein-splicing']
-			pred['Prediction'] = pred.idxmax(axis=1)
-
-			final = df1
-			final['Prediction'] = pred['Prediction']
-			st.write(final)
+			SingleSequencePred(seq, res)
+			st.success('Prediction done successfully!', icon="✅")
+		if st.button("Reset"):
+			st.experimental_rerun()
 
 
-	else:
+	with tab2:
+		# Example dataframe in CSV format
+		example_dataframe = pd.DataFrame({
+		    'Sequence': ['MSIPETQKGVIFYESHGKLEYKDI', 'MVHLTPEEKSAVTAL', 'MVLSPADKTNVKAAWGKVGAHAGEY'],
+		    'Residue No.': [16, 3, 21]
+		})
+		example_dataframe = example_dataframe.style.set_properties(**{'white-space': 'nowrap'})
+		
+		with st.expander("See Example", expanded=True):
+			st.write("*Example Dataframe:*")
+			st.write(example_dataframe)
+
 		uploaded_file = st.file_uploader('Upload a CSV', type='csv')
 
-		if uploaded_file is not None:
+		# Display the example dataframe if no file uploaded yet
+		if uploaded_file is None:
+			st.warning("Please use 'Sequence' and 'Residue No.' as column names in the CSV file to avoid errors.", icon="⚠️")
+			st.markdown('<p style="color:grey;">Definition:</p>', unsafe_allow_html=True)
+			st.markdown("<ul style='color:grey;'><li>'Sequence' represents protein sequence.</li> <li>'Residue No.' represents the position where histidine is present.</li></ul>", unsafe_allow_html=True)
+		else:
 			data = pd.read_csv(uploaded_file)
+			st.session_state["uploaded_file"] = data
+			if 'EntryID' not in data.columns:
+				data.insert(loc=0, column='EntryID', value=np.arange(data.shape[0]))
 
-			st.write(data)
+			data = data[['EntryID', 'Sequence', 'Residue No.']]
 
-			st.write("After preprocessing...")
-			df1 = preprocessing(data)[0]
+			data_styl = data.style.set_properties(**{'white-space': 'nowrap'})
+			st.write(data_styl)
 
-			# Display the DataFrame in the Streamlit app
-			st.write(df1)
-
-			X = preprocessing(data)[1]
-
-			y_pred = model.predict(X)
-
-			y_test = np.zeros(list(y_pred.shape), dtype = int)
-
-			for i in range(len(y_test)):
-			  for j in range(8):
-			      if j==6:
-			        y_test[i][j]=1
-
-			score = model.evaluate(X, y_test, verbose=0)
-
-			st.write("%s: %.2f%%" % (model.metrics_names[1], score[1]*100))
-
-			pred = pd.DataFrame(y_pred)
-			pred.columns = ['Acetylation', 'Ribosylation', 'glycoprotein', 'hydroxylation', 'methylation', 'oxidation', 'pHOSPORYLATON', 'protein-splicing']
-			pred['Prediction'] = pred.idxmax(axis=1)
-
-			final = df1
-			final['Prediction'] = pred['Prediction']
-			final["EntryID"] = data["EntryID"]
-			final["Modification"] = data['Modification']
-			final = final[["EntryID", "Mod Sequence", "Modification", "Prediction"]]
-
-			st.write(final)
+			MultiSequencePred(data)
+			st.success('Prediction done successfully!', icon="✅")
 
 
 if __name__=="__main__":
